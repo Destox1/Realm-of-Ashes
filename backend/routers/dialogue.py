@@ -20,7 +20,7 @@ from models.response_models import (
     PlayerInitResponse,
     ResetResponse,
 )
-from services import ash_service, rate_limiter
+from services import ash_service, rate_limiter, village_service
 from services.claude_service import extract_and_store_memory, generate_dialogue
 from services.memory_service import (
     delete_all_for_player,
@@ -153,6 +153,16 @@ async def dialogue(body: DialogueRequest, background: BackgroundTasks):
 async def ash_update(body: AshUpdateRequest) -> AshUpdateResponse:
     await ash_service.init_player(body.player_id)
     result = await ash_service.update_ash(body.player_id, body.ash_delta, body.reason)
+
+    # Cross-NPC awareness: if this event has a mapped village rumour, log it
+    # so every NPC's next dialogue sees it in their system prompt. Silent no-op
+    # if event_type is unknown or missing (e.g. old client).
+    if body.event_type:
+        try:
+            await village_service.record_village_event(body.player_id, body.event_type)
+        except Exception:
+            logger.exception("record_village_event failed (non-fatal)")
+
     return AshUpdateResponse(
         new_ash_level=result["new_ash_level"], capped=result["capped"]
     )
@@ -187,4 +197,5 @@ async def get_memories_debug(player_id: str, npc_id: str) -> MemoriesResponse:
 async def reset_player(player_id: str) -> ResetResponse:
     await ash_service.reset_player(player_id)
     await delete_all_for_player(player_id)
+    await village_service.delete_all_for_player(player_id)
     return ResetResponse(reset=True)

@@ -36,6 +36,24 @@ CREATE TABLE IF NOT EXISTS dialogue_log (
     FOREIGN KEY (player_id) REFERENCES players(id)
 );
 
+-- Village events: shared "rumour pool" that EVERY NPC sees in their system prompt.
+-- This is the cross-NPC awareness layer (the project's USP): when the player
+-- steals from Mira, Kael's *next* dialogue can naturally reference it because
+-- the event is read from here and injected into Kael's prompt as gossip.
+--
+-- summary is stored in German because that's the language NPCs speak in; it
+-- goes verbatim into the system prompt as a bullet under "What People in the
+-- Village Are Saying".
+CREATE TABLE IF NOT EXISTS village_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id   TEXT NOT NULL,
+    event_type  TEXT NOT NULL,                         -- matches frontend ASH_EVENTS id
+    summary     TEXT NOT NULL,                         -- short German rumour sentence
+    fired_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (player_id) REFERENCES players(id)
+);
+
 -- Indices for performance
-CREATE INDEX IF NOT EXISTS idx_memories_player_npc ON npc_memories(player_id, npc_id);
-CREATE INDEX IF NOT EXISTS idx_log_player_npc      ON dialogue_log(player_id, npc_id);
+CREATE INDEX IF NOT EXISTS idx_memories_player_npc      ON npc_memories(player_id, npc_id);
+CREATE INDEX IF NOT EXISTS idx_log_player_npc           ON dialogue_log(player_id, npc_id);
+CREATE INDEX IF NOT EXISTS idx_village_events_player    ON village_events(player_id, fired_at DESC);

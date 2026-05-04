@@ -18,6 +18,7 @@ from services.memory_service import (
     get_memories,
     insert_memory,
 )
+from services.village_service import get_recent_village_events
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +68,27 @@ def format_memories(memories: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_system_prompt(npc: dict, ash_level: int, memories: list[dict]) -> str:
+def format_village_events(events: list[dict]) -> str:
+    """Render the shared village rumour pool as a bullet list. Newest first.
+    The summaries are already in German because that is the language NPCs
+    speak; they can reference these gossip lines naturally in dialogue."""
+    if not events:
+        return "Es gibt im Dorf bisher kein besonderes Gerede über diesen Fremden."
+    lines = ["Folgendes wird im Dorf über den Fremden erzählt (neueste zuerst):"]
+    for e in events:
+        lines.append(f"• {e['summary']}")
+    return "\n".join(lines)
+
+
+def build_system_prompt(
+    npc: dict,
+    ash_level: int,
+    memories: list[dict],
+    village_events: list[dict] | None = None,
+) -> str:
     memories_block = format_memories(memories)
     ash_interp = get_ash_interpretation(ash_level)
+    village_block = format_village_events(village_events or [])
 
     return f"""You are {npc['name']}, an NPC in a dark fantasy RPG called Realm of Ashes.
 
@@ -85,6 +104,12 @@ The player's current Ash Level is {ash_level}/10.
 
 ## What You Remember About This Player
 {memories_block}
+
+## What People in the Village Are Saying
+Ashenvale is small. News, rumours and gossip travel between neighbours within hours. You probably heard the following from another villager — even if YOU were not personally there:
+{village_block}
+
+If a recent rumour is relevant, you may reference it naturally in your reply (e.g. "Mira hat erzählt, dass…", "Man sagt, du hättest…", "Lena hat allen erzählt, dass…"). Do NOT list the rumours mechanically. Only bring one up if your character would actually care about it.
 
 ## Dialogue Rules
 - Stay completely in character at all times. Never break immersion.
@@ -115,8 +140,10 @@ async def generate_dialogue(
 
     memories = await get_memories(player_id, npc_id)
     history = await get_dialogue_history(player_id, npc_id, limit=6)
+    # Cross-NPC awareness: every NPC sees the same recent rumour pool.
+    village_events = await get_recent_village_events(player_id, limit=5)
 
-    system_prompt = build_system_prompt(npc, ash_level, memories)
+    system_prompt = build_system_prompt(npc, ash_level, memories, village_events)
 
     messages = []
     for entry in history:
